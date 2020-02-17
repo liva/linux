@@ -693,7 +693,7 @@ void kfree_skb(struct sk_buff *skb)
 	if (!skb_unref(skb))
 		return;
 
-	trace_kfree_skb(skb, __builtin_return_address(0));
+	trace_kfree_skb(skb, 0);
 	__kfree_skb(skb);
 }
 EXPORT_SYMBOL(kfree_skb);
@@ -1863,7 +1863,7 @@ void *skb_put(struct sk_buff *skb, unsigned int len)
 	skb->tail += len;
 	skb->len  += len;
 	if (unlikely(skb->tail > skb->end))
-		skb_over_panic(skb, len, __builtin_return_address(0));
+		skb_over_panic(skb, len, 0);
 	return tmp;
 }
 EXPORT_SYMBOL(skb_put);
@@ -1882,7 +1882,7 @@ void *skb_push(struct sk_buff *skb, unsigned int len)
 	skb->data -= len;
 	skb->len  += len;
 	if (unlikely(skb->data < skb->head))
-		skb_under_panic(skb, len, __builtin_return_address(0));
+		skb_under_panic(skb, len, 0);
 	return skb->data;
 }
 EXPORT_SYMBOL(skb_push);

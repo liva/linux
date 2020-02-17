@@ -140,6 +140,7 @@ struct lkl_host_operations {
  */
 int lkl_start_kernel(struct lkl_host_operations *lkl_ops,
 		    const char *cmd_line, ...);
+int lkl_start_kernel2(struct lkl_host_operations *lkl_ops);
 
 /**
  * lkl_is_running - returns 1 if the kernel is currently running

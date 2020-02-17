@@ -176,8 +176,8 @@
 )
 
 
-#define _RET_IP_		(unsigned long)__builtin_return_address(0)
-#define _THIS_IP_  ({ __label__ __here; __here: (unsigned long)&&__here; })
+#define _RET_IP_		(unsigned long)0
+#define _THIS_IP_ ({ void *pc; __asm__("sic %0": "=r"(pc)); (unsigned long)pc; })
 
 #define sector_div(a, b) do_div(a, b)
 

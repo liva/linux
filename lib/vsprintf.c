@@ -2583,6 +2583,19 @@ out:
 
 }
 EXPORT_SYMBOL(vsnprintf);
+int vsnprintf2(char *buf, size_t size, const char *fmt, va_list args)
+{
+  return 0;
+}
+EXPORT_SYMBOL(vsnprintf2);
+void hogehoge(void);
+int __init vsnprintf3(void)
+{
+  //  asm volatile(".globl hogehoge; hogehoge: nop; b.l	0x0(,%s10);");
+  return 0;
+}
+EXPORT_SYMBOL(vsnprintf3);
+EXPORT_SYMBOL(hogehoge);
 
 /**
  * vscnprintf - Format a string and place it in a buffer

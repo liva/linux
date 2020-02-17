@@ -598,7 +598,7 @@ void warn_slowpath_fmt(const char *file, int line, const char *fmt, ...)
 
 	args.fmt = fmt;
 	va_start(args.args, fmt);
-	__warn(file, line, __builtin_return_address(0), TAINT_WARN, NULL,
+	__warn(file, line, 0, TAINT_WARN, NULL,
 	       &args);
 	va_end(args.args);
 }
@@ -611,7 +611,7 @@ void warn_slowpath_fmt_taint(const char *file, int line,
 
 	args.fmt = fmt;
 	va_start(args.args, fmt);
-	__warn(file, line, __builtin_return_address(0), taint, NULL, &args);
+	__warn(file, line, 0, taint, NULL, &args);
 	va_end(args.args);
 }
 EXPORT_SYMBOL(warn_slowpath_fmt_taint);
@@ -619,7 +619,7 @@ EXPORT_SYMBOL(warn_slowpath_fmt_taint);
 void warn_slowpath_null(const char *file, int line)
 {
 	pr_warn(CUT_HERE);
-	__warn(file, line, __builtin_return_address(0), TAINT_WARN, NULL, NULL);
+	__warn(file, line, 0, TAINT_WARN, NULL, NULL);
 }
 EXPORT_SYMBOL(warn_slowpath_null);
 #else
@@ -670,7 +670,7 @@ device_initcall(register_warn_debugfs);
 __visible void __stack_chk_fail(void)
 {
 	panic("stack-protector: Kernel stack is corrupted in: %pB",
-		__builtin_return_address(0));
+		0);
 }
 EXPORT_SYMBOL(__stack_chk_fail);
 

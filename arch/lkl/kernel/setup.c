@@ -48,6 +48,8 @@ static void __init lkl_run_kernel(void *arg)
 	start_kernel();
 }
 
+static void fn(void *arg) {  
+}
 int __init lkl_start_kernel(struct lkl_host_operations *ops,
 			const char *fmt, ...)
 {

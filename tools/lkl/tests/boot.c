@@ -501,8 +501,8 @@ LKL_TEST_CALL(start_kernel, lkl_start_kernel, 0, &lkl_host_ops,
 	     "mem=16M loglevel=8");
 LKL_TEST_CALL(stop_kernel, lkl_sys_halt, 0);
 
-struct lkl_test tests[] = {
-	LKL_TEST(mutex),
+struct lkl_test tests[] = {	
+			   LKL_TEST(mutex),
 	LKL_TEST(semaphore),
 	LKL_TEST(join),
 	LKL_TEST(start_kernel),
@@ -522,9 +522,9 @@ struct lkl_test tests[] = {
 	LKL_TEST(fstat),
 	LKL_TEST(mkdir),
 	LKL_TEST(stat),
-#ifndef __MINGW32__
+	#ifndef __MINGW32__
 	LKL_TEST(nanosleep),
-#endif
+	#endif
 	LKL_TEST(pipe2),
 	LKL_TEST(epoll),
 	LKL_TEST(mount_fs_proc),
@@ -542,7 +542,7 @@ struct lkl_test tests[] = {
 	 * the thread terminates which makes testing the automatic
 	 * syscall threads cleanup impossible under wine.
 	 */
-#ifndef __MINGW32__
+	#ifndef __MINGW32__
 	LKL_TEST(many_syscall_threads),
 #endif
 	LKL_TEST(stop_kernel),
@@ -550,7 +550,7 @@ struct lkl_test tests[] = {
 
 int main(int argc, const char **argv)
 {
-	lkl_host_ops.print = lkl_test_log;
+  //lkl_host_ops.print = lkl_test_log;
 
 	return lkl_test_run(tests, sizeof(tests)/sizeof(struct lkl_test),
 			    "boot");

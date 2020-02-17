@@ -9,7 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
-#include <sys/uio.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
@@ -27,6 +27,7 @@
  * we will? */
 #define SHARE_SEM 0
 #endif /* _POSIX_SEMAPHORES */
+#include <semaphore.h>
 
 static void print(const char *str, int len)
 {
@@ -183,10 +184,109 @@ static void mutex_free(struct lkl_mutex *_mutex)
 	free(_mutex);
 }
 
+enum Status { NOT_INTIALIZED, READY, PROCESSING, KILLED };
+
+struct thread_creator {
+  pthread_t worker_pth;
+  enum Status status;
+  pthread_mutex_t mp;
+  pthread_cond_t worker_wakeup_cond;
+  pthread_cond_t worker_finish_cond;
+  pthread_cond_t waiting_thread_cond;
+  
+  void (*fn)(void *);
+  void *arg;
+  pthread_t pth;
+  int rval;
+};
+
+struct thread_creator th_creator =
+  {
+   0,
+   NOT_INTIALIZED,
+   PTHREAD_MUTEX_INITIALIZER,
+   PTHREAD_COND_INITIALIZER,
+   PTHREAD_COND_INITIALIZER,
+   PTHREAD_COND_INITIALIZER,
+   0,
+   0,
+   0,
+   0
+  };
+
+static void *thread_creator_main(void *arg) {
+  pthread_mutex_lock(&th_creator.mp);
+  if (th_creator.status != NOT_INTIALIZED) {
+    pthread_mutex_unlock(&th_creator.mp);
+    return NULL;
+  }
+  th_creator.status = READY;
+  pthread_cond_broadcast(&th_creator.waiting_thread_cond);
+  while(1) {
+    pthread_cond_wait(&th_creator.worker_wakeup_cond, &th_creator.mp);
+    if (th_creator.status == KILLED) {
+      pthread_mutex_unlock(&th_creator.mp);
+      return NULL;
+    }
+    if (th_creator.status == PROCESSING) {
+      th_creator.rval = pthread_create(&th_creator.pth, NULL, (void* (*)(void *))th_creator.fn, th_creator.arg);
+      pthread_cond_signal(&th_creator.worker_finish_cond);
+    }
+  }
+}
+
+static void thread_creator_init(void) {
+  sigset_t ss;
+
+  sigemptyset(&ss);
+  if (sigaddset(&ss, SIGALRM) != 0) 
+    return;
+  if (pthread_sigmask(SIG_BLOCK, &ss, NULL) != 0) 
+    return;
+
+  pthread_create(&th_creator.worker_pth, NULL, thread_creator_main, NULL);
+}
+
+static int create_thread(pthread_t *pth, void (*fn)(void *), void *arg) {
+  int rval;
+  
+  pthread_mutex_lock(&th_creator.mp);
+  if (th_creator.status == NOT_INTIALIZED) {
+     thread_creator_init();
+  }
+  while (th_creator.status != READY) {
+    pthread_cond_wait(&th_creator.waiting_thread_cond, &th_creator.mp);
+  }
+  th_creator.status = PROCESSING;
+  
+  th_creator.fn = fn;
+  th_creator.arg = arg;
+  
+  pthread_cond_signal(&th_creator.worker_wakeup_cond);
+  pthread_cond_wait(&th_creator.worker_finish_cond, &th_creator.mp);
+
+  *pth = th_creator.pth;
+  rval = th_creator.rval;
+  
+  th_creator.status = READY;
+  pthread_cond_signal(&th_creator.waiting_thread_cond);
+  pthread_mutex_unlock(&th_creator.mp);
+  return rval;
+}
+
+static void thread_creator_halt(void) {
+  th_creator.status = KILLED;
+  pthread_mutex_lock(&th_creator.mp);
+  pthread_cond_signal(&th_creator.worker_wakeup_cond);
+  pthread_mutex_unlock(&th_creator.mp);
+  pthread_join(th_creator.worker_pth, NULL);
+}
+
 static lkl_thread_t thread_create(void (*fn)(void *), void *arg)
 {
 	pthread_t thread;
-	if (WARN_PTHREAD(pthread_create(&thread, NULL, (void* (*)(void *))fn, arg)))
+	//if (WARN_PTHREAD(pthread_create(&thread, NULL, (void* (*)(void *))fn, arg)))
+	if (WARN_PTHREAD(create_thread(&thread, fn, arg)))
 		return 0;
 	else
 		return (lkl_thread_t) thread;
@@ -258,22 +358,75 @@ static unsigned long long time_ns(void)
 	return 1e9*ts.tv_sec + ts.tv_nsec;
 }
 
+struct helper_info {
+  void (*fn)(void *);
+  void *arg;
+  struct helper_info *next;
+};
+
+struct helper_info *info_list;
+
+void *timerhelper_func(void *arg) {
+  sigset_t ss;
+  sigemptyset(&ss);
+  if (sigaddset(&ss, SIGALRM) != 0) 
+    return NULL;
+  
+  while (1) {
+    siginfo_t siginfo;
+    if (sigwaitinfo(&ss, &siginfo) >= 0) {
+      struct helper_info *i = info_list;
+      while(i != NULL) {
+	if ((void *)i == siginfo.si_value.sival_ptr) {
+	  i->fn(i->arg);
+	}
+	i = i->next;
+      }
+    }
+  }
+}
+
+pthread_mutex_t helper_th_mp = PTHREAD_MUTEX_INITIALIZER;
+pthread_t helper_th = 0;
+
 static void *timer_alloc(void (*fn)(void *), void *arg)
 {
 	int err;
 	timer_t timer;
-	struct sigevent se =  {
-		.sigev_notify = SIGEV_THREAD,
-		.sigev_value = {
-			.sival_ptr = arg,
-		},
-		.sigev_notify_function = (void (*)(union sigval))fn,
-	};
+	
+	struct helper_info *info = malloc(sizeof(struct helper_info));
+	info->fn = fn;
+	info->arg = arg;
+	info->next = NULL;
+
+	pthread_mutex_lock(&helper_th_mp);
+	if (helper_th == 0) {
+	  info_list = info;
+	  create_thread(&helper_th, (void (*)(void *))timerhelper_func, NULL);
+	  pthread_detach(helper_th);
+	} else {
+	  struct helper_info *i = info_list;
+	  while(i->next != NULL) {
+	    i = i->next;
+	  }
+	  i->next = info;
+	}
+	pthread_mutex_unlock(&helper_th_mp);
+	
+	struct sigevent se =
+	  {
+	   .sigev_notify = SIGEV_SIGNAL,
+	   .sigev_signo = SIGALRM,
+	   .sigev_value =
+	   {
+	    .sival_ptr = (void *)info
+	   }
+	  };
 
 	err = timer_create(CLOCK_REALTIME, &se, &timer);
 	if (err)
 		return NULL;
-
+	
 	return (void *)(long)timer;
 }
 
@@ -287,7 +440,8 @@ static int timer_set_oneshot(void *_timer, unsigned long ns)
 		},
 	};
 
-	return timer_settime(timer, 0, &ts, NULL);
+	int i = timer_settime(timer, 0, &ts, NULL);
+	return i;
 }
 
 static void timer_free(void *_timer)
