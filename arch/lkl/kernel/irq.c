@@ -54,18 +54,23 @@ static bool irqs_enabled;
 
 static struct pt_regs dummy;
 
+static int tmp = 0;
 static void run_irq(int irq)
 {
 	unsigned long flags;
 	struct pt_regs *old_regs = set_irq_regs((struct pt_regs *)&dummy);
 
 	/* interrupt handlers need to run with interrupts disabled */
+	if (__sync_fetch_and_add(&tmp, 1) != 0) {
+	  BUG_ON(true);
+	}
 	local_irq_save(flags);
 	irq_enter();
 	generic_handle_irq(irq);
 	irq_exit();
 	set_irq_regs(old_regs);
 	local_irq_restore(flags);
+	__sync_fetch_and_sub(&tmp, 1);
 }
 
 /**
@@ -167,20 +172,49 @@ unsigned long arch_local_save_flags(void)
 	return irqs_enabled;
 }
 
+u64 baddr[5];
 void arch_local_irq_restore(unsigned long flags)
 {
+  if (flags == ARCH_IRQ_DISABLED) {
+    baddr[0] = __builtin_return_address(0);
+    baddr[1] = __builtin_return_address(1);
+    baddr[2] = __builtin_return_address(2);
+  }
 	if (flags == ARCH_IRQ_ENABLED && irqs_enabled == ARCH_IRQ_DISABLED &&
 	    !in_interrupt())
 		run_irqs();
 	irqs_enabled = flags;
 }
 
+int uio_irq_request(struct irq_data *data);
+void uio_irq_release(struct irq_data *data);
+
+static void noop(struct irq_data *data) { }
+static unsigned int noop_ret(struct irq_data *data)
+{
+        return 0;
+}
+
+struct irq_chip dummy_lkl_irq_chip = {
+        .name           = "lkl_dummy",
+        .irq_startup    = noop_ret,
+        .irq_shutdown   = noop,
+        .irq_enable     = noop,
+        .irq_disable    = noop,
+        .irq_ack        = noop,
+        .irq_mask       = noop,
+        .irq_unmask     = noop,
+        .irq_request_resources = uio_irq_request,
+        .irq_release_resources = uio_irq_release,
+        .flags          = IRQCHIP_SKIP_SET_WAKE,
+};
+
 void init_IRQ(void)
 {
 	int i;
 
 	for (i = 0; i < NR_IRQS; i++)
-		irq_set_chip_and_handler(i, &dummy_irq_chip, handle_simple_irq);
+		irq_set_chip_and_handler(i, &dummy_lkl_irq_chip, handle_simple_irq);
 
 	pr_info("lkl: irqs initialized\n");
 }

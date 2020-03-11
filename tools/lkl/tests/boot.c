@@ -550,7 +550,7 @@ struct lkl_test tests[] = {
 
 int main(int argc, const char **argv)
 {
-  //lkl_host_ops.print = lkl_test_log;
+  //	lkl_host_ops.print = lkl_test_log;
 
 	return lkl_test_run(tests, sizeof(tests)/sizeof(struct lkl_test),
 			    "boot");

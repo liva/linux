@@ -1,6 +1,11 @@
 #include <string.h>
 #include <stdint.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <lkl_host.h>
+#include <stdint.h>
 
 #include "iomem.h"
 
@@ -53,14 +58,24 @@ void unregister_iomem(void *base)
 	iomem_regions[index].ops = NULL;
 }
 
+void *uio_resource_addr = NULL;
+
 void *lkl_ioremap(long addr, int size)
 {
+  if (addr == 0xfbe00000) {
+    // dirty hack
+    int fd = open("/sys/class/uio/uio0/device/resource0", O_RDWR);
+    uio_resource_addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    return (void *)addr;
+  }
 	int index = IOMEM_ADDR_TO_INDEX(addr);
 	struct iomem_region *iomem = &iomem_regions[index];
 
 	if (index >= MAX_IOMEM_REGIONS)
 		return NULL;
-
+	
+	lkl_printf("lkl_ioremap %p %d %d\n", iomem->ops, size, iomem->size);
 	if (iomem->ops && size <= iomem->size)
 		return IOMEM_INDEX_TO_ADDR(index);
 
@@ -69,6 +84,44 @@ void *lkl_ioremap(long addr, int size)
 
 int lkl_iomem_access(const volatile void *addr, void *res, int size, int write)
 {
+  if (((void *)0xfbe00000 <= addr) && (addr + size < (void *)0xfbe02000) && (uio_resource_addr != NULL)) {
+    // dirty hack
+    void *mmaped_addr = uio_resource_addr + (addr - (void *)0xfbe00000);
+    switch (size) {
+    case 8:
+      if (write) {
+	*(uint64_t *)mmaped_addr = *(uint64_t *)res;
+      } else {
+	*(uint64_t *)res = *(uint64_t *)mmaped_addr;
+      }
+      break;
+    case 4:
+      if (write) {
+	*(uint32_t *)mmaped_addr = *(uint32_t *)res;
+      } else {
+	*(uint32_t *)res = *(uint32_t *)mmaped_addr;
+      }
+      break;
+    case 2:
+      if (write) {
+	*(uint16_t *)mmaped_addr = *(uint16_t *)res;
+      } else {
+	*(uint16_t *)res = *(uint16_t *)mmaped_addr;
+      }
+      break;
+    case 1:
+      if (write) {
+	*(uint8_t *)mmaped_addr = *(uint8_t *)res;
+      } else {
+	*(uint8_t *)res = *(uint8_t *)mmaped_addr;
+      }
+      break;
+    default:
+      lkl_printf("not implemented yet\n");
+      lkl_host_ops.panic();
+    }
+    return 0;
+  }
 	int index = IOMEM_ADDR_TO_INDEX(addr);
 	struct iomem_region *iomem = &iomem_regions[index];
 	int offset = IOMEM_ADDR_TO_OFFSET(addr);

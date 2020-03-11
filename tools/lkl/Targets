@@ -23,5 +23,6 @@ LDLIBS_lklfuse-y := -lfuse
 
 progs-y += tests/boot
 progs-y += tests/disk
+progs-y += tests/disk-nvme
 progs-y += tests/net-test
 
