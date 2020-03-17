@@ -54,23 +54,18 @@ static bool irqs_enabled;
 
 static struct pt_regs dummy;
 
-static int tmp = 0;
 static void run_irq(int irq)
 {
 	unsigned long flags;
 	struct pt_regs *old_regs = set_irq_regs((struct pt_regs *)&dummy);
 
 	/* interrupt handlers need to run with interrupts disabled */
-	if (__sync_fetch_and_add(&tmp, 1) != 0) {
-	  BUG_ON(true);
-	}
 	local_irq_save(flags);
 	irq_enter();
 	generic_handle_irq(irq);
 	irq_exit();
 	set_irq_regs(old_regs);
 	local_irq_restore(flags);
-	__sync_fetch_and_sub(&tmp, 1);
 }
 
 /**
@@ -172,14 +167,8 @@ unsigned long arch_local_save_flags(void)
 	return irqs_enabled;
 }
 
-u64 baddr[5];
 void arch_local_irq_restore(unsigned long flags)
 {
-  if (flags == ARCH_IRQ_DISABLED) {
-    baddr[0] = __builtin_return_address(0);
-    baddr[1] = __builtin_return_address(1);
-    baddr[2] = __builtin_return_address(2);
-  }
 	if (flags == ARCH_IRQ_ENABLED && irqs_enabled == ARCH_IRQ_DISABLED &&
 	    !in_interrupt())
 		run_irqs();

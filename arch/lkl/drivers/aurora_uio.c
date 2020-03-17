@@ -22,10 +22,20 @@ void *mmap(void *addr, size_t length, int prot, int flags,
            int fd, off_t offset);
 off_t lseek(int fd, off_t offset, int whence);
 int close(int fd);
+uint64_t ve_register_mem_to_pci(void *mem, size_t size);
 #define MAP_FAILED (void *)-1
+#define SIZE_64M (1UL << 26)
+#define PCIATB_PAGESIZE (1UL << 26)
+#define MAX_SIZE (PCIATB_PAGESIZE * 512)
+#define MAP_64MB       0x800000
 
 static int uiofd;
 static int configfd;
+static u64 pci_vhsaa;
+static void *vemva;
+static u64 mem_offset = 0;
+extern u64 pci_vhsaa_all;
+extern void *vemva_all;
 
 struct uio_pci_sysdata {
 	int domain; /* PCI domain */
@@ -121,23 +131,6 @@ struct pci_ops uio_pci_root_ops = {
 	.write = uio_pci_generic_write,
 };
 
-int pagemapfd;
-
-static dma_addr_t vtop(u64 vaddr) {
-  u64 paddr = 0;
-  u64 offset = (vaddr / 0x1000 /*sysconf(_SC_PAGESIZE)*/) * sizeof(u64);
-  u64 e;
-  
-  // https://www.kernel.org/doc/Documentation/vm/pagemap.txt
-  pread(pagemapfd, &e, sizeof(u64), offset);
-  if (e & (1ULL << 63)) {            // page present ?
-    paddr = e & ((1ULL << 55) - 1);  // pfn mask
-    paddr = paddr * 0x1000/*sysconf(_SC_PAGESIZE)*/;
-    // add offset within page
-    paddr = paddr | (vaddr & (0x1000 /*sysconf(_SC_PAGESIZE)*/ - 1));
-  }
-  return paddr;
-}
 
 static void *posix_physmem_alloc(struct device *dev, size_t size,
                             dma_addr_t *dma_handle, gfp_t gfp,
@@ -145,10 +138,13 @@ static void *posix_physmem_alloc(struct device *dev, size_t size,
 {
   void *ret;
 
-  ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_LOCKED | MAP_ANONYMOUS, -1, 0);
-  if (ret != MAP_FAILED) {
-    *dma_handle = vtop((u64)ret);
+  if (mem_offset >= PCIATB_PAGESIZE) {
+    return NULL;
   }
+  size = ((size + 4095) / 4096) * 4096;
+  ret = vemva + mem_offset;
+  *dma_handle = pci_vhsaa + mem_offset;
+  mem_offset += size;
   return ret;
 }
 
@@ -164,7 +160,7 @@ static dma_addr_t posix_physmem_map_page(struct device *dev, struct page *page,
                                       enum dma_data_direction dir,
                                       unsigned long attrs)
 {
-  return vtop((u64)page_to_virt(page)) + offset;
+  return pci_vhsaa_all + ((u64)page_to_virt(page) - (u64)vemva_all) + offset;
 }
 
 static int posix_physmem_map_sg(struct device *dev, struct scatterlist *sgl, int nents,
@@ -179,7 +175,7 @@ static int posix_physmem_map_sg(struct device *dev, struct scatterlist *sgl, int
     
     BUG_ON(!sg_page(sg));
     va = sg_virt(sg);
-    sg_dma_address(sg) = (dma_addr_t)vtop((u64)va);
+    sg_dma_address(sg) = (dma_addr_t)pci_vhsaa_all + ((u64)va - (u64)vemva_all);
     sg_dma_len(sg) = sg->length;
   }
   return nents;
@@ -276,10 +272,21 @@ static int __init aurora_uio_init(void)
     return -1;
   }
 
-  pagemapfd = open("/proc/self/pagemap", O_RDONLY);
-  if (pagemapfd < 0) {
-    return -1;
-  }
+  // these VE memory should be used for data buffer
+  vemva = mmap(NULL, PCIATB_PAGESIZE, PROT_READ | PROT_WRITE,
+	       MAP_ANONYMOUS | MAP_SHARED | MAP_64MB, -1, 0);
+  if (NULL == vemva)
+        {
+	  panic("Fail to allocate memory");
+	  return -1;
+	}
+  
+  pci_vhsaa = ve_register_mem_to_pci(vemva, PCIATB_PAGESIZE);
+  if (pci_vhsaa == (uint64_t)-1)
+    {
+      panic("Fail to ve_register_mem_to_pci()");
+                return -1;
+    }
 
   sd = kzalloc(sizeof(*sd), GFP_KERNEL);
   if (!sd)

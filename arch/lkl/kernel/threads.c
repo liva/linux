@@ -19,6 +19,10 @@ static int init_ti(struct thread_info *ti)
 	return 0;
 }
 
+void thread_stack_cache_init(void)
+{
+}
+
 unsigned long *alloc_thread_stack_node(struct task_struct *task, int node)
 {
 	struct thread_info *ti;

@@ -8,11 +8,47 @@ static unsigned long _memory_start, mem_size;
 
 void *empty_zero_page;
 
+#include <uapi/linux/mman.h>
+void *mmap(void *addr, size_t length, int prot, int flags,
+           int fd, off_t offset);
+#define MAP_64MB       0x800000
+#define PCIATB_PAGESIZE (1UL << 26)
+uint64_t ve_register_mem_to_pci(void *mem, size_t size);
+
+uint64_t pci_vhsaa_all;
+void *vemva_all = NULL;
+static void *malloc_dma(size_t size) {
+  if (size > PCIATB_PAGESIZE) {
+    lkl_printf("Fail to allocate memory");
+    lkl_ops->panic();
+  }
+  if (vemva_all != NULL) {
+    lkl_printf("Fail to allocate memory");
+    lkl_ops->panic();
+  }
+  vemva_all = mmap(NULL, PCIATB_PAGESIZE, PROT_READ | PROT_WRITE,
+	       MAP_ANONYMOUS | MAP_SHARED | MAP_64MB, -1, 0);
+  if (NULL == vemva_all)
+        {
+	  lkl_printf("Fail to allocate memory");
+	  lkl_ops->panic();
+	}
+  
+  pci_vhsaa_all = ve_register_mem_to_pci(vemva_all, PCIATB_PAGESIZE);
+  if (pci_vhsaa_all == (uint64_t)-1)
+    {
+      lkl_printf("Fail to ve_register_mem_to_pci()");
+      lkl_ops->panic();
+    }
+  return vemva_all;
+}
+
+
 void __init bootmem_init(unsigned long mem_sz)
 {
 	mem_size = mem_sz;
 
-	_memory_start = (unsigned long)lkl_ops->mem_alloc(mem_size);
+	_memory_start = (unsigned long)malloc_dma(mem_size);
 	memory_start = _memory_start;
 	BUG_ON(!memory_start);
 	memory_end = memory_start + mem_size;
@@ -62,5 +98,5 @@ void free_initmem(void)
 
 void free_mem(void)
 {
-	lkl_ops->mem_free((void *)_memory_start);
+  //	lkl_ops->mem_free((void *)_memory_start);
 }

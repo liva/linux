@@ -47,6 +47,7 @@ GCCATOMIC=__sync_synchronize|__sync_fetch_and_sub_4|__sync_fetch_and_add_4
 GCCATOMIC:=$(GCCATOMIC)|__sync_fetch_and_and_4|__sync_fetch_and_or_4
 VMLINUX_SYMS=__start___ex_table|__stop___ex_table|boot_cmdline
 EXP_SYMRENAME=rump|RUMP|bmk_|lib_|nuse_|lkl_|__tls|__initcall_start
+EXP_SYMRENAME:=$(EXP_SYMRENAME)|open|pread|pwrite|read|mmap|ve_register_mem_to_pci
 EXP_SYMRENAME:=$(EXP_SYMRENAME)|__bzero|__sched
 EXP_SYMRENAME:=$(EXP_SYMRENAME)|__initcall_end|__gcov|_end|_GLOBAL_OFFSET_TABLE|__assert13
 EXP_SYMRENAME:=$(EXP_SYMRENAME)|${GCCSYMBOLS}|${GCCATOMIC}'${_SYMQUIRK}'
