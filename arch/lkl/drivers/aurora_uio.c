@@ -92,6 +92,37 @@ pciide_machdep_compat_intr_establish(device_t dev,
 __strong_alias(pciide_machdep_compat_intr_disestablish, pci_intr_disestablish);
 #endif /* __HAVE_PCIIDE_MACHDEP_COMPAT_INTR_ESTABLISH */
 
+static void uio_int_thread(void *_irq)
+{
+  unsigned icount;
+  int err;
+  unsigned char command_high;
+  int irq = *((int *)_irq);
+
+  /* Read and cache command value */
+  err = pread(configfd, &command_high, 1, 5);
+  if (err != 1) {
+    panic("failed to uio config read");
+  }
+  command_high &= ~0x4;
+      
+  while(1) {    
+    /* Wait for next interrupt. */
+    err = read(uiofd, &icount, 4);
+    if (err != 4) {
+      panic("failed to uio read");
+    }
+    
+    lkl_trigger_irq(irq);
+
+    /* Re-enable interrupts. */
+    err = pwrite(configfd, &command_high, 1, 5);
+    if (err != 1) {
+      panic("failed to uio config write");
+    }
+  }
+}
+
 /* from drivers/pci/xen-pcifront.c */
 static int pci_lib_claim_resource(struct pci_dev *dev, void *data)
 {
@@ -110,6 +141,11 @@ static int pci_lib_claim_resource(struct pci_dev *dev, void *data)
 					pci_name(dev), i);
 			}
 		}
+	}
+
+	dev->irq = 11;//lkl_get_free_irq("pci");
+	if (!lkl_ops->thread_create(uio_int_thread, &dev->irq)) {
+	  return -ENOMEM;
 	}
 
 	return 0;
@@ -198,68 +234,6 @@ struct dma_map_ops posix_dma_ops =
    .map_page          = posix_physmem_map_page,
    .dma_supported     = posix_physmem_dma_supported,
   };
-
-static void uio_int_thread(void *_data)
-{
-  unsigned icount;
-  int err;
-  unsigned char command_high;
-  struct irq_data *data = (struct irq_data *)_data;
-
-  /* Read and cache command value */
-  err = pread(configfd, &command_high, 1, 5);
-  if (err != 1) {
-    panic("failed to uio config read");
-  }
-  command_high &= ~0x4;
-      
-  while(1) {    
-    /* Wait for next interrupt. */
-    err = read(uiofd, &icount, 4);
-    if (err != 4) {
-      panic("failed to uio read");
-    }
-    
-    lkl_trigger_irq(data->irq);
-
-    /* Re-enable interrupts. */
-    err = pwrite(configfd, &command_high, 1, 5);
-    if (err != 1) {
-      panic("failed to uio config write");
-    }
-  }
-}
-
-int irq_num = -1;
-
-int uio_irq_request(struct irq_data *data)
-{
-        int ret, int_irq;
-        struct irq_desc *desc = irq_to_desc(data->irq);
-        const char *name = desc->name ? desc->name : "null"; /* XXX */
-	if (irq_num != -1) {
-	  if (data->irq == irq_num) {
-	    // just ignore
-	    return 0;
-	  }
-	  return -ENOSPC;
-	}
-	irq_num = data->irq;
-
-        /* setup IRQ */
-        int_irq = lkl_get_free_irq(name);
-
-	if (!lkl_ops->thread_create(uio_int_thread, data)) {
-	  return -ENOMEM;
-	}
-
-        return 0;
-}
-
-void uio_irq_release(struct irq_data *data)
-{
-        /* XXX: NOP */
-}
 
 static int __init aurora_uio_init(void)
 {
