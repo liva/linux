@@ -305,6 +305,21 @@ int select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *t)
 			      (lkl_fd_set *)e, (struct lkl_timeval *)t);
 }
 
+HOST_CALL(open);
+int open(const char *pathname, int flags, ...)
+{
+	CHECK_HOST_CALL(open);
+
+	va_list ap;
+	mode_t mode;
+	
+	va_start(ap, flags);
+	mode = va_arg(ap, mode_t);
+	va_end(ap);
+	
+	return lkl_sys_openat(AT_FDCWD, pathname, flags, mode);
+}
+
 HOST_CALL(close);
 int close(int fd)
 {

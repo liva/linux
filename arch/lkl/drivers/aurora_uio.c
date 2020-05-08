@@ -230,9 +230,7 @@ int irq_num = -1;
 
 int uio_irq_request(struct irq_data *data)
 {
-        int ret, int_irq;
-        struct irq_desc *desc = irq_to_desc(data->irq);
-        const char *name = desc->name ? desc->name : "null"; /* XXX */
+        int ret;
 	if (irq_num != -1) {
 	  if (data->irq == irq_num) {
 	    // just ignore
@@ -241,9 +239,6 @@ int uio_irq_request(struct irq_data *data)
 	  return -ENOSPC;
 	}
 	irq_num = data->irq;
-
-        /* setup IRQ */
-        int_irq = lkl_get_free_irq(name);
 
 	if (!lkl_ops->thread_create(uio_int_thread, data)) {
 	  return -ENOMEM;

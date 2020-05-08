@@ -16,8 +16,10 @@
 #include <asm/cpu.h>
 #include <asm/sched.h>
 
+uint64_t tmp_var = 0;
 static asmlinkage long sys_virtio_mmio_device_add(long base, long size,
 						  unsigned int irq);
+static asmlinkage long sys_hoge(void);
 
 typedef long (*syscall_handler_t)(long arg1, ...);
 
@@ -25,13 +27,20 @@ typedef long (*syscall_handler_t)(long arg1, ...);
 #define __SYSCALL(nr, sym) [nr] = (syscall_handler_t)sym,
 
 syscall_handler_t syscall_table[__NR_syscalls] = {
-	[0 ... __NR_syscalls - 1] =  (syscall_handler_t)sys_ni_syscall,
+	[0 ... __NR_syscalls - 1] = (syscall_handler_t)sys_ni_syscall,
 #include <asm/unistd.h>
 
 #if __BITS_PER_LONG == 32
 #include <asm/unistd_32.h>
 #endif
 };
+SYSCALL_DEFINE0(hoge)
+{
+	uint64_t ret;
+	void *vehva = ((void *)0x000000001000);
+	asm volatile("lhm.l %0,0(%1)" : "=r"(ret) : "r"(vehva));
+	return ((uint64_t)1000 * ret) / 800;
+}
 
 static long run_syscall(long no, long *params)
 {
@@ -48,9 +57,9 @@ static long run_syscall(long no, long *params)
 	return ret;
 }
 
-
-#define CLONE_FLAGS (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_THREAD |	\
-		     CLONE_SIGHAND | SIGCHLD)
+#define CLONE_FLAGS                                                            \
+	(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_THREAD | CLONE_SIGHAND |    \
+	 SIGCHLD)
 
 static int host_task_id;
 static struct task_struct *host0;
@@ -96,6 +105,13 @@ static void del_host_task(void *arg)
 
 static struct lkl_tls_key *task_key;
 
+static inline uint64_t gettime()
+{
+	uint64_t ret;
+	void *vehva = ((void *)0x000000001000);
+	asm volatile("lhm.l %0,0(%1)" : "=r"(ret) : "r"(vehva));
+	return ((uint64_t)1000 * ret) / 800;
+}
 long lkl_syscall(long no, long *params)
 {
 	struct task_struct *task = host0;
@@ -117,7 +133,10 @@ long lkl_syscall(long no, long *params)
 
 	switch_to_host_task(task);
 
+	uint64_t time = 0;
+	time = gettime();
 	ret = run_syscall(no, params);
+	tmp_var = gettime() - time;
 
 	if (no == __NR_reboot) {
 		thread_sched_jb();
@@ -214,19 +233,23 @@ SYSCALL_DEFINE3(virtio_mmio_device_add, long, base, long, size, unsigned int,
 
 	pdev = platform_device_alloc("virtio-mmio", PLATFORM_DEVID_AUTO);
 	if (!pdev) {
-		dev_err(&pdev->dev, "%s: Unable to device alloc for virtio-mmio\n", __func__);
+		dev_err(&pdev->dev,
+			"%s: Unable to device alloc for virtio-mmio\n",
+			__func__);
 		return -ENOMEM;
 	}
 
 	ret = platform_device_add_resources(pdev, res, ARRAY_SIZE(res));
 	if (ret) {
-		dev_err(&pdev->dev, "%s: Unable to add resources for %s%d\n", __func__, pdev->name, pdev->id);
+		dev_err(&pdev->dev, "%s: Unable to add resources for %s%d\n",
+			__func__, pdev->name, pdev->id);
 		goto exit_device_put;
 	}
 
 	ret = platform_device_add(pdev);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "%s: Unable to add %s%d\n", __func__, pdev->name, pdev->id);
+		dev_err(&pdev->dev, "%s: Unable to add %s%d\n", __func__,
+			pdev->name, pdev->id);
 		goto exit_release_pdev;
 	}
 

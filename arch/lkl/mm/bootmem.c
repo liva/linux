@@ -14,19 +14,18 @@ void *mmap(void *addr, size_t length, int prot, int flags,
 #define MAP_64MB       0x800000
 #define PCIATB_PAGESIZE (1UL << 26)
 uint64_t ve_register_mem_to_pci(void *mem, size_t size);
+int ve_unregister_mem_from_pci(uint64_t pci_addr, size_t size);
 
 uint64_t pci_vhsaa_all;
 void *vemva_all = NULL;
+size_t vem_size;
 static void *malloc_dma(size_t size) {
-  if (size > PCIATB_PAGESIZE) {
-    lkl_printf("Fail to allocate memory");
-    lkl_ops->panic();
-  }
+  vem_size = ((size + PCIATB_PAGESIZE - 1) / PCIATB_PAGESIZE) * PCIATB_PAGESIZE;
   if (vemva_all != NULL) {
     lkl_printf("Fail to allocate memory");
     lkl_ops->panic();
   }
-  vemva_all = mmap(NULL, PCIATB_PAGESIZE, PROT_READ | PROT_WRITE,
+  vemva_all = mmap(NULL, vem_size, PROT_READ | PROT_WRITE,
 	       MAP_ANONYMOUS | MAP_SHARED | MAP_64MB, -1, 0);
   if (NULL == vemva_all)
         {
@@ -34,7 +33,7 @@ static void *malloc_dma(size_t size) {
 	  lkl_ops->panic();
 	}
   
-  pci_vhsaa_all = ve_register_mem_to_pci(vemva_all, PCIATB_PAGESIZE);
+  pci_vhsaa_all = ve_register_mem_to_pci(vemva_all, vem_size);
   if (pci_vhsaa_all == (uint64_t)-1)
     {
       lkl_printf("Fail to ve_register_mem_to_pci()");
@@ -99,4 +98,10 @@ void free_initmem(void)
 void free_mem(void)
 {
   //	lkl_ops->mem_free((void *)_memory_start);
+  int ret;
+  ret = ve_unregister_mem_from_pci(pci_vhsaa_all, vem_size);
+  if (ret) {
+      lkl_printf("Fail to ve_unregister_mem_from_pci()");
+  }
+  // unmap
 }

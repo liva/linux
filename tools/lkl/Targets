@@ -4,10 +4,11 @@ ifneq ($(LKL_HOST_CONFIG_BSD),y)
 libs-$(LKL_HOST_CONFIG_POSIX) += lib/hijack/liblkl-hijack
 endif
 LDFLAGS_lib/hijack/liblkl-hijack-y += -shared -nodefaultlibs
-LDLIBS_lib/hijack/liblkl-hijack-y += -ldl
-LDLIBS_lib/hijack/liblkl-hijack-$(LKL_HOST_CONFIG_ARM) += -lgcc -lc
-LDLIBS_lib/hijack/liblkl-hijack-$(LKL_HOST_CONFIG_AARCH64) += -lc
-LDLIBS_lib/hijack/liblkl-hijack-$(LKL_HOST_CONFIG_I386) += -lc_nonshared
+LDLIBS_lib/hijack/liblkl-hijack-y += -ldl -L/opt/nec/nosupport/llvm-ve-1.4.0/lib/clang/10.0.0/lib/linux -lclang_rt.builtins-ve -lc
+#LDLIBS_lib/hijack/liblkl-hijack-$(LKL_HOST_CONFIG_ARM) += -lgcc -lc
+#LDLIBS_lib/hijack/liblkl-hijack-$(LKL_HOST_CONFIG_AARCH64) += -lc
+#LDLIBS_lib/hijack/liblkl-hijack-$(LKL_HOST_CONFIG_I386) += -lc_nonshared
+
 
 progs-$(LKL_HOST_CONFIG_FUSE) += lklfuse
 LDLIBS_lklfuse-y := -lfuse
